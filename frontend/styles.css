@@ -1,0 +1,16 @@
+* { box-sizing: border-box; }
+body { font-family: system-ui, Arial, sans-serif; margin: 0; color: #222; background: #fafafa; }
+header { background: #0b5fff; color: #fff; padding: 16px 24px; }
+main { padding: 16px 24px; }
+.controls { display: flex; gap: 24px; align-items: center; margin-bottom: 16px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 16px; }
+.kpi { background: #fff; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 8px; }
+.kpi span { font-size: 24px; font-weight: 700; }
+.charts { display: grid; grid-template-columns: 1fr; gap: 24px; }
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+th, td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+thead th { background: #f7f7f7; text-align: left; }
+button { padding: 8px 12px; border: 0; background: #0b5fff; color: #fff; border-radius: 6px; cursor: pointer; }
+button:hover { background: #0847c7; }
+input[type="date"], input[type="file"] { padding: 6px; }
+

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NYC Mobility Dashboard</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header>
+    <h1>NYC Mobility Dashboard</h1>
+  </header>
+  <main>
+    <section class="controls">
+      <div>
+        <label>From <input type="date" id="fromDate" /></label>
+        <label>To <input type="date" id="toDate" /></label>
+        <button id="btnRefresh">Refresh</button>
+      </div>
+      <div>
+        <form id="uploadForm">
+          <input type="file" id="fileInput" accept=".csv" />
+          <button type="submit">Clean CSV</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi"><span id="kpiTrips">0</span><label>Trips</label></div>
+      <div class="kpi"><span id="kpiAvgSpeed">0</span><label>Avg Speed (km/h)</label></div>
+      <div class="kpi"><span id="kpiAvgFare">0</span><label>Avg Fare per km</label></div>
+      <div class="kpi"><span id="kpiAvgDuration">0</span><label>Avg Duration (min)</label></div>
+    </section>
+
+    <section class="charts">
+      <div>
+        <h3>Trips by Hour</h3>
+        <canvas id="hourlyChart" width="800" height="240"></canvas>
+      </div>
+      <div>
+        <h3>Top Tipped Trips</h3>
+        <table id="topTippedTable">
+          <thead><tr><th>Trip ID</th><th>Tip %</th><th>Fare</th><th>Tip</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="./app.js"></script>
+  <script>
+    // Simple canvas drawing for hourly chart (no libs)
+  </script>
+</body>
+<!-- No trailing whitespace -->
+</html>
+
+
