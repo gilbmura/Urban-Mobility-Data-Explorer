@@ -1,4 +1,4 @@
-const apiBase = 'http://localhost:5000';
+const apiBase = '';
 
 async function fetchJSON(url) {
   const res = await fetch(url);
