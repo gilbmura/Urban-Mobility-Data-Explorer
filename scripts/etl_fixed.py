@@ -6,7 +6,8 @@ import argparse
 from datetime import datetime
 from typing import Dict, Any, List, Tuple, Iterable
 import math
-
+import math, itertools, sys, traceback
+from MySQLdb import IntegrityError
 import MySQLdb
 
 
@@ -149,27 +150,179 @@ def write_cleaned_csv(rows: Iterable[Dict[str, Any]], output_path: str) -> int:
     return count
 
 
-def load_into_mysql(rows: Iterable[Dict[str, Any]], conn) -> int:
+# def upsert_missing_parents(conn, kept_rows):
+#     cur = conn.cursor()
+#     # vendors
+#     csv_vendor_ids = sorted({r['vendor_id'] for r in kept_rows if r.get('vendor_id')})
+#     if csv_vendor_ids:
+#         # fetch existing
+#         cur.execute("SELECT vendor_id FROM vendors WHERE vendor_id IN (%s)" %
+#                     ",".join(["%s"]*len(csv_vendor_ids)), csv_vendor_ids)
+#         existing = {row[0] for row in cur.fetchall()}
+#         to_insert = [v for v in csv_vendor_ids if v not in existing]
+#         if to_insert:
+#             cur.executemany("INSERT IGNORE INTO vendors (vendor_id, name) VALUES (%s, %s)",
+#                             [(v, 'unknown') for v in to_insert])
+#     # payment_types (same pattern)
+#     cur.close()
+#     conn.commit()
+
+
+
+# def load_into_mysql(rows: Iterable[Dict[str, Any]], conn) -> int:
+#     cur = conn.cursor()
+#     sql = (
+#         "INSERT INTO trips (vendor_id, pickup_datetime, dropoff_datetime, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, fare_amount, tip_amount, payment_type) "
+#         "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+#     )
+#     batch: List[Tuple] = []
+#     total = 0
+#     for r in rows:
+#         batch.append((r['vendor_id'], r['pickup_datetime'], r['dropoff_datetime'], r['pickup_lat'], r['pickup_lng'], r['dropoff_lat'], r['dropoff_lng'], r['distance_km'], r['duration_min'], r['fare_amount'], r['tip_amount'], r['payment_type']))
+#         if len(batch) >= 2000:
+#             cur.executemany(sql, batch)
+#             conn.commit()
+#             total += len(batch)
+#             print(f"Loaded {total} records so far...")
+#             batch.clear()
+#     if batch:
+#         cur.executemany(sql, batch)
+#         conn.commit()
+#         total += len(batch)
+#     return total
+
+
+# place near top of file with your other imports
+# import csv, math, itertools, sys, traceback
+# from MySQLdb import IntegrityError
+
+def chunked(iterable, size):
+    it = iter(iterable)
+    while True:
+        chunk = list(itertools.islice(it, size))
+        if not chunk:
+            return
+        yield chunk
+
+def upsert_parents_for_batch(cur, batch_rows):
+    """Ensure vendor and payment_type parents exist for this batch.
+       cur is a MySQLdb cursor (not the connection)."""
+    # vendors
+    vendor_ids = sorted({ (r.get('vendor_id') or '').strip() for r in batch_rows if r.get('vendor_id') })
+    vendor_ids = [v for v in vendor_ids if v != '']
+    if vendor_ids:
+        # fetch existing
+        q = "SELECT vendor_id FROM vendors WHERE vendor_id IN ({})".format(",".join(["%s"]*len(vendor_ids)))
+        cur.execute(q, vendor_ids)
+        existing = {row[0] for row in cur.fetchall()}
+        to_insert = [v for v in vendor_ids if v not in existing]
+        if to_insert:
+            cur.executemany("INSERT IGNORE INTO vendors (vendor_id, name) VALUES (%s, %s)", [(v, 'unknown') for v in to_insert])
+
+    # payment_types
+    payment_codes = sorted({ (r.get('payment_type') or '').strip() for r in batch_rows if r.get('payment_type') })
+    payment_codes = [c for c in payment_codes if c != '']
+    if payment_codes:
+        q = "SELECT code FROM payment_types WHERE code IN ({})".format(",".join(["%s"]*len(payment_codes)))
+        cur.execute(q, payment_codes)
+        existing = {row[0] for row in cur.fetchall()}
+        to_insert = [c for c in payment_codes if c not in existing]
+        if to_insert:
+            cur.executemany("INSERT IGNORE INTO payment_types (code, label) VALUES (%s, %s)", [(c, 'unknown') for c in to_insert])
+
+def load_into_mysql(kept_rows, conn, batch_size=1000):
+    """
+    kept_rows: list of dict-like rows (keys must match CSV headers used below)
+    conn: MySQLdb connection
+    """
     cur = conn.cursor()
-    sql = (
-        "INSERT INTO trips (vendor_id, pickup_datetime, dropoff_datetime, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, fare_amount, tip_amount, payment_type) "
-        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+    insert_sql = (
+        "INSERT INTO trips "
+        "(vendor_id, pickup_datetime, dropoff_datetime, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, distance_km, duration_min, fare_amount, tip_amount, payment_type) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
-    batch: List[Tuple] = []
+
+    # open a simple failure log
+    fail_log_path = "db/failed_rows.log"
+    with open(fail_log_path, "a", newline='') as flog:
+        flog.write("=== New load run ===\n")
+
     total = 0
-    for r in rows:
-        batch.append((r['vendor_id'], r['pickup_datetime'], r['dropoff_datetime'], r['pickup_lat'], r['pickup_lng'], r['dropoff_lat'], r['dropoff_lng'], r['distance_km'], r['duration_min'], r['fare_amount'], r['tip_amount'], r['payment_type']))
-        if len(batch) >= 2000:
-            cur.executemany(sql, batch)
+    for batch in chunked(kept_rows, batch_size):
+        # ensure parents exist for this batch
+        try:
+            upsert_parents_for_batch(cur, batch)
             conn.commit()
-            total += len(batch)
-            print(f"Loaded {total} records so far...")
-            batch.clear()
-    if batch:
-        cur.executemany(sql, batch)
-        conn.commit()
-        total += len(batch)
+        except Exception:
+            # log and continue (rare)
+            with open(fail_log_path, "a") as flog:
+                flog.write("Parent upsert exception:\n")
+                flog.write(traceback.format_exc() + "\n")
+            conn.rollback()
+
+        # prepare tuples for insertion (map fields exactly as your schema expects)
+        values = []
+        for r in batch:
+            # normalize and convert; adapt keys if your CSV header differs
+            vendor_id = r.get('vendor_id') or None
+            pickup_datetime = r.get('pickup_datetime') or None
+            dropoff_datetime = r.get('dropoff_datetime') or None
+            pickup_lat = r.get('pickup_lat') or None
+            pickup_lng = r.get('pickup_lng') or None
+            dropoff_lat = r.get('dropoff_lat') or None
+            dropoff_lng = r.get('dropoff_lng') or None
+            distance_km = r.get('distance_km') or None
+            duration_min = r.get('duration_min') or None
+            fare_amount = r.get('fare_amount') if r['fare_amount'] is not None else 10.0,
+            tip_amount = r.get('tip_amount') if r['tip_amount']  is not None else 0.0,
+            payment_type = r.get('payment_type') if r['payment_type'] is not None else 'unknown'
+
+            values.append((
+                vendor_id, pickup_datetime, dropoff_datetime,
+                pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+                distance_km, duration_min, fare_amount, tip_amount, payment_type
+            ))
+
+        # try batch insert
+        try:
+            cur.executemany(insert_sql, values)
+            conn.commit()
+            total += len(values)
+        except IntegrityError as e:
+            # write the error and the batch to log, then try single-row inserts to locate failing rows
+            conn.rollback()
+            with open(fail_log_path, "a") as flog:
+                flog.write("Batch IntegrityError: {}\n".format(e))
+                flog.write("Batch size: {}\n".format(len(values)))
+            # fallback: insert one-by-one and log failing rows
+            for idx, single_vals in enumerate(values):
+                try:
+                    cur.execute(insert_sql, single_vals)
+                    conn.commit()
+                    total += 1
+                except IntegrityError as ie:
+                    conn.rollback()
+                    # log the row and the exact error
+                    with open(fail_log_path, "a") as flog:
+                        flog.write("Failed row index in batch {} : {}\n".format(idx, ie))
+                        flog.write("Row data: {}\n".format(single_vals))
+                        flog.write(traceback.format_exc() + "\n")
+                except Exception as ex:
+                    conn.rollback()
+                    with open(fail_log_path, "a") as flog:
+                        flog.write("Other insert exception on single row: {}\n".format(ex))
+                        flog.write("Row data: {}\n".format(single_vals))
+                        flog.write(traceback.format_exc() + "\n")
+        except Exception as ex:
+            # unexpected errors
+            conn.rollback()
+            with open(fail_log_path, "a") as flog:
+                flog.write("Unexpected exception during batch insert:\n")
+                flog.write(traceback.format_exc() + "\n")
+
+    cur.close()
     return total
+
 
 
 def main():
