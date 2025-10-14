@@ -1,4 +1,4 @@
-const apiBase = '';
+const apiBase = 'http://127.0.0.1:5000';
 
 async function fetchJSON(url) {
   const res = await fetch(url);
@@ -46,20 +46,28 @@ async function refresh(){
   const q = new URLSearchParams();
   if (from) q.set('from', from);
   if (to) q.set('to', to);
-  const [summary, hourly, topTipped] = await Promise.all([
-    fetchJSON(`${apiBase}/stats/summary?${q.toString()}`),
-    fetchJSON(`${apiBase}/aggregations/hourly?${q.toString()}`),
-    fetchJSON(`${apiBase}/insights/top_tipped?limit=20`)
-  ]);
-  setKPIs(summary);
-  drawHourlyChart(hourly);
-  const tbody = document.querySelector('#topTippedTable tbody');
-  tbody.innerHTML = '';
-  topTipped.forEach(r => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${r.trip_id}</td><td>${r.tip_pct}%</td><td>${r.fare_amount}</td><td>${r.tip_amount}</td>`;
-    tbody.appendChild(tr);
-  });
+  
+  try {
+    const [summary, hourly, topTipped] = await Promise.all([
+      fetchJSON(`${apiBase}/stats/summary?${q.toString()}`),
+      fetchJSON(`${apiBase}/aggregations/hourly?${q.toString()}`),
+      fetchJSON(`${apiBase}/insights/top_tipped?limit=20`)
+    ]);
+    
+    setKPIs(summary);
+    drawHourlyChart(hourly);
+    
+    const tbody = document.querySelector('#topTippedTable tbody');
+    tbody.innerHTML = '';
+    topTipped.forEach(r => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${r.trip_id}</td><td>${r.tip_pct}%</td><td>${r.fare_amount}</td><td>${r.tip_amount}</td>`;
+      tbody.appendChild(tr);
+    });
+  } catch (error) {
+    console.error('Error fetching data:', error);
+    alert('Failed to load data. Make sure the API server is running on http://127.0.0.1:5000');
+  }
 }
 
 document.getElementById('btnRefresh').addEventListener('click', () => {
@@ -72,16 +80,20 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
   if (!file) return;
   const form = new FormData();
   form.append('file', file);
-  const res = await fetch(`${apiBase}/process`, { method: 'POST', body: form });
-  if (!res.ok) { alert('Processing failed'); return; }
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'cleaned.csv'; a.click();
-  URL.revokeObjectURL(url);
+  
+  try {
+    const res = await fetch(`${apiBase}/process`, { method: 'POST', body: form });
+    if (!res.ok) { alert('Processing failed'); return; }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'cleaned.csv'; a.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error processing file:', error);
+    alert('Failed to process file. Make sure the API server is running.');
+  }
 });
 
 // Initial load
 refresh().catch(console.error);
-
-
