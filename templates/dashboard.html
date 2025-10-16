@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Mobility - Real-Time Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #181c2f 0%, #2a2d4d 100%);
+            min-height: 100vh;
+            color: #ffffff;
+            overflow-x: hidden;
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(24, 28, 47, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(123, 97, 255, 0.3);
+            border-top: 4px solid #7b61ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-overlay p {
+            margin-top: 20px;
+            color: #7b61ff;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .top-nav {
+            background: rgba(30, 34, 51, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid rgba(123, 97, 255, 0.2);
+        }
+
+        .nav-content {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .logo i {
+            color: #7b61ff;
+            font-size: 2rem;
+        }
+
+        .logo span {
+            background: linear-gradient(135deg, #7b61ff 0%, #e056fd 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #4ade80;
+            font-weight: 500;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            background: #4ade80;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #4ade80;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            animation: fadeInDown 0.6s ease;
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .header-title i {
+            font-size: 2.5rem;
+            color: #7b61ff;
+        }
+
+        .header-title h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+        }
+
+        .filter-section {
+            display: flex;
+            gap: 1rem;
+            background: rgba(30, 34, 51, 0.6);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            backdrop-filter: blur(10px);
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .filter-group label {
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.7);
+            font-weight: 500;
+        }
+
+        .filter-input {
+            padding: 0.8rem 1.2rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(123, 97, 255, 0.3);
+            border-radius: 0.5rem;
+            color: #ffffff;
+            font-family: 'Poppins', sans-serif;
+            font-size: 0.95rem;
+            outline: none;
+            transition: all 0.3s ease;
+            min-width: 150px;
+        }
+
+        .filter-input:focus {
+            border-color: #7b61ff;
+            box-shadow: 0 0 15px rgba(123, 97, 255, 0.4);
+        }
+
+        .filter-input option {
+            background: #1e2233;
+            color: #ffffff;
+        }
+
+        .filter-buttons {
+            display: flex;
+            gap: 0.5rem;
+            align-items: flex-end;
+        }
+
+        .btn {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-apply {
+            background: linear-gradient(135deg, #7b61ff 0%, #9c7fff 100%);
+            color: #ffffff;
+            box-shadow: 0 4px 15px rgba(123, 97, 255, 0.4);
+        }
+
+        .btn-apply:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(123, 97, 255, 0.6);
+        }
+
+        .btn-reset {
+            background: transparent;
+            color: #ffffff;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-reset:hover {
+            border-color: #7b61ff;
+            background: rgba(123, 97, 255, 0.1);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.6s ease 0.2s backwards;
+        }
+
+        .stat-card {
+            background: rgba(30, 34, 51, 0.6);
+            padding: 2rem;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            box-shadow: 0 0 20px rgba(123, 97, 255, 0.2);
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(123, 97, 255, 0.1);
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 0 30px rgba(123, 97, 255, 0.4);
+            border-color: rgba(123, 97, 255, 0.3);
+        }
+
+        .stat-icon {
+            width: 70px;
+            height: 70px;
+            border-radius: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            flex-shrink: 0;
+        }
+
+        .icon-purple {
+            background: linear-gradient(135deg, rgba(123, 97, 255, 0.2), rgba(123, 97, 255, 0.4));
+            color: #7b61ff;
+        }
+
+        .icon-pink {
+            background: linear-gradient(135deg, rgba(236, 72, 153, 0.2), rgba(236, 72, 153, 0.4));
+            color: #ec4899;
+        }
+
+        .icon-cyan {
+            background: linear-gradient(135deg, rgba(44, 209, 255, 0.2), rgba(44, 209, 255, 0.4));
+            color: #2cd1ff;
+        }
+
+        .icon-orange {
+            background: linear-gradient(135deg, rgba(251, 146, 60, 0.2), rgba(251, 146, 60, 0.4));
+            color: #fb923c;
+        }
+
+        .stat-content h3 {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.3rem;
+        }
+
+        .stat-content p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.9rem;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+            animation: fadeInUp 0.6s ease 0.4s backwards;
+        }
+
+        .chart-card {
+            background: rgba(30, 34, 51, 0.6);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 0 20px rgba(123, 97, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(123, 97, 255, 0.1);
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .chart-title {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .chart-title i {
+            color: #7b61ff;
+            font-size: 1.3rem;
+        }
+
+        .chart-title h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .refresh-btn {
+            background: rgba(123, 97, 255, 0.1);
+            border: none;
+            width: 35px;
+            height: 35px;
+            border-radius: 0.5rem;
+            color: #7b61ff;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(123, 97, 255, 0.2);
+            transform: rotate(180deg);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .live-activity-section {
+            background: rgba(30, 34, 51, 0.6);
+            padding: 1.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 0 20px rgba(123, 97, 255, 0.2);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(123, 97, 255, 0.1);
+            animation: fadeInUp 0.6s ease 0.6s backwards;
+        }
+
+        .activity-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .activity-title {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .activity-title i {
+            color: #7b61ff;
+            font-size: 1.3rem;
+        }
+
+        .activity-title h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .activity-list {
+            max-height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .activity-list::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .activity-list::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        .activity-list::-webkit-scrollbar-thumb {
+            background: rgba(123, 97, 255, 0.5);
+            border-radius: 10px;
+        }
+
+        .activity-item {
+            background: rgba(42, 45, 77, 0.4);
+            padding: 1.2rem;
+            border-radius: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: all 0.3s ease;
+            border: 1px solid rgba(123, 97, 255, 0.1);
+        }
+
+        .activity-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 0 20px rgba(123, 97, 255, 0.3);
+            border-color: rgba(123, 97, 255, 0.3);
+        }
+
+        .activity-icon {
+            width: 45px;
+            height: 45px;
+            background: rgba(123, 97, 255, 0.2);
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #7b61ff;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .activity-content {
+            flex: 1;
+        }
+
+        .activity-content h4 {
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+            font-size: 1rem;
+        }
+
+        .activity-content p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.85rem;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard-header {
+                flex-direction: column;
+                gap: 1.5rem;
+            }
+
+            .filter-section {
+                width: 100%;
+                flex-wrap: wrap;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-title h1 {
+                font-size: 1.8rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loader"></div>
+        <p>Loading Dashboard...</p>
+    </div>
+
+    <nav class="top-nav">
+        <div class="nav-content">
+            <div class="logo">
+                <i class="fas fa-building"></i>
+                <span>NYC Mobility</span>
+            </div>
+            <div class="connection-status">
+                <span class="status-dot"></span>
+                <span>Connected</span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container">
+        <header class="dashboard-header">
+            <div class="header-title">
+                <i class="fas fa-chart-pie"></i>
+                <h1>Real-Time Dashboard</h1>
+            </div>
+            <div class="filter-section">
+                <div class="filter-group">
+                    <label>Filter by Date</label>
+                    <input type="date" id="dateFilter" class="filter-input">
+                </div>
+                <div class="filter-group" style="display: none;">
+                    <label>Filter by Month</label>
+                    <input type="month" id="monthFilter" class="filter-input">
+                </div>
+                <div class="filter-group" style="display: none;">
+                    <label>Filter by Year</label>
+                    <select id="yearFilter" class="filter-input">
+                        <option value="">All Years</option>
+                        <option value="2025">2025</option>
+                        <option value="2024">2024</option>
+                        <option value="2023">2023</option>
+                        <option value="2022">2022</option>
+                        <option value="2021">2021</option>
+                        <option value="2016">2016</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Vendor</label>
+                    <select id="vendorFilter" class="filter-input">
+                        <option value="">All Vendors</option>
+                        <option value="1">Vendor 1</option>
+                        <option value="2">Vendor 2</option>
+                    </select>
+                </div>
+                <div class="filter-buttons">
+                    <button id="applyBtn" class="btn btn-apply">
+                        <i class="fas fa-filter"></i> Apply
+                    </button>
+                    <button id="resetBtn" class="btn btn-reset">
+                        <i class="fas fa-times"></i> Reset
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon icon-purple">
+                    <i class="fas fa-route"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="totalTrips">0</h3>
+                    <p>Total Trips</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon icon-pink">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="avgFare">$0.00</h3>
+                    <p>Average Fare</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon icon-cyan">
+                    <i class="fas fa-road"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="avgDistance">0 km</h3>
+                    <p>Avg Distance</p>
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon icon-orange">
+                    <i class="fas fa-tachometer-alt"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="avgSpeed">0 km/h</h3>
+                    <p>Avg Speed</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="fas fa-clock"></i>
+                        <h3>Hourly Trip Distribution</h3>
+                    </div>
+                    <button class="refresh-btn" onclick="refreshCharts()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="hourlyChart"></canvas>
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="fas fa-calendar-week"></i>
+                        <h3>Weekly Patterns</h3>
+                    </div>
+                    <button class="refresh-btn" onclick="refreshCharts()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="weeklyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="live-activity-section">
+            <div class="activity-header">
+                <div class="activity-title">
+                    <i class="fas fa-stream"></i>
+                    <h3>Live Activity</h3>
+                </div>
+            </div>
+            <div class="activity-list" id="activityList"></div>
+        </div>
+    </div>
+
+    <script>
+        var allTrips = [];
+        var filteredTrips = [];
+        var hourlyChart = null;
+        var weeklyChart = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            loadData();
+        });
+
+        function loadData() {
+            try {
+                fetch('http://127.0.0.1:5000/trips').then(function(response) {
+                    if (response && response.ok) {
+                        return response.json();
+                    } else {
+                        throw new Error('No trips API');
+                    }
+                }).then(function(data) {
+                    allTrips = data;
+                    filteredTrips = allTrips.slice();
+                    updateDashboard();
+                    hideLoading();
+                }).catch(function(error) {
+                    allTrips = generateSampleData(2000);
+                    filteredTrips = allTrips.slice();
+                    updateDashboard();
+                    hideLoading();
+                });
+            } catch (error) {
+                allTrips = generateSampleData(2000);
+                filteredTrips = allTrips.slice();
+                updateDashboard();
+                hideLoading();
+            }
+        }
+
+        function hideLoading() {
+            setTimeout(function() {
+                document.getElementById('loadingOverlay').classList.add('hidden');
+            }, 1000);
+        }
+
+        function generateSampleData(count) {
+            var data = [];
+            var baseDate = new Date('2025-03-10');
+            for (var i = 0; i < count; i++) {
+                var hour = Math.floor(Math.random() * 24);
+                var dayOfWeek = Math.floor(Math.random() * 7);
+                var distance = (Math.random() * 20 + 0.5).toFixed(2);
+                var duration = (Math.random() * 60 + 5).toFixed(2);
+                var fare = (Math.random() * 50 + 5).toFixed(2);
+                var tripDate = new Date(baseDate.getTime());
+                tripDate.setDate(tripDate.getDate() - Math.floor(Math.random() * 30));
+                tripDate.setHours(hour);
+                tripDate.setMinutes(Math.floor(Math.random() * 60));
+                data.push({
+                    trip_id: 100000 + i,
+                    vendor_id: Math.random() > 0.5 ? "1" : "2",
+                    pickup_datetime: tripDate.toISOString(),
+                    distance_km: distance,
+                    duration_min: duration,
+                    fare_amount: fare,
+                    speed_kmh: (parseFloat(distance) / (parseFloat(duration) / 60)).toFixed(2),
+                    hour_of_day: hour,
+                    day_of_week: dayOfWeek,
+                    pickup_lat: (40.7 + Math.random() * 0.1).toFixed(6),
+                    pickup_lng: (-74.0 + Math.random() * 0.1).toFixed(6)
+                });
+            }
+            return data;
+        }
+
+        function setupEventListeners() {
+            document.getElementById('applyBtn').addEventListener('click', applyFilters);
+            document.getElementById('resetBtn').addEventListener('click', resetFilters);
+        }
+
+        setTimeout(function() {
+            setupEventListeners();
+        }, 100);
+
+        function applyFilters() {
+            var dateValue = document.getElementById('dateFilter').value;
+            var monthValue = document.getElementById('monthFilter').value;
+            var yearValue = document.getElementById('yearFilter').value;
+            var vendorValue = document.getElementById('vendorFilter').value;
+            
+            filteredTrips = allTrips.slice();
+            
+            if (dateValue) {
+                var filterDate = new Date(dateValue);
+                filteredTrips = filteredTrips.filter(function(trip) {
+                    var tripDate = new Date(trip.pickup_datetime);
+                    return tripDate.getFullYear() === filterDate.getFullYear() &&
+                           tripDate.getMonth() === filterDate.getMonth() &&
+                           tripDate.getDate() === filterDate.getDate();
+                });
+            }
+            
+            if (monthValue) {
+                var monthParts = monthValue.split('-');
+                var filterYear = parseInt(monthParts[0]);
+                var filterMonth = parseInt(monthParts[1]) - 1;
+                filteredTrips = filteredTrips.filter(function(trip) {
+                    var tripDate = new Date(trip.pickup_datetime);
+                    return tripDate.getFullYear() === filterYear &&
+                           tripDate.getMonth() === filterMonth;
+                });
+            }
+            
+            if (yearValue) {
+                var filterYear = parseInt(yearValue);
+                filteredTrips = filteredTrips.filter(function(trip) {
+                    var tripDate = new Date(trip.pickup_datetime);
+                    return tripDate.getFullYear() === filterYear;
+                });
+            }
+            
+            if (vendorValue) {
+                filteredTrips = filteredTrips.filter(function(trip) {
+                    return trip.vendor_id === vendorValue;
+                });
+            }
+            
+            updateDashboard();
+        }
+
+        function resetFilters() {
+            document.getElementById('dateFilter').value = '';
+            document.getElementById('monthFilter').value = '';
+            document.getElementById('yearFilter').value = '';
+            document.getElementById('vendorFilter').value = '';
+            filteredTrips = allTrips.slice();
+            updateDashboard();
+        }
+
+        function updateDashboard() {
+            updateStats();
+            updateCharts();
+            updateLiveActivity();
+        }
+
+        function updateStats() {
+            var totalTrips = filteredTrips.length;
+            
+            if (totalTrips === 0) {
+                document.getElementById('totalTrips').textContent = '0';
+                document.getElementById('avgFare').textContent = '$0.00';
+                document.getElementById('avgDistance').textContent = '0.00 km';
+                document.getElementById('avgSpeed').textContent = '0.00 km/h';
+                return;
+            }
+            
+            var sumFare = 0;
+            var sumDistance = 0;
+            var sumSpeed = 0;
+            
+            for (var i = 0; i < filteredTrips.length; i++) {
+                var trip = filteredTrips[i];
+                var fare = parseFloat(trip.fare_amount);
+                var distance = parseFloat(trip.distance_km);
+                var speed = parseFloat(trip.speed_kmh);
+                
+                if (!isNaN(fare)) sumFare += fare;
+                if (!isNaN(distance)) sumDistance += distance;
+                if (!isNaN(speed)) sumSpeed += speed;
+            }
+            
+            var avgFare = sumFare / totalTrips;
+            var avgDistance = sumDistance / totalTrips;
+            var avgSpeed = sumSpeed / totalTrips;
+            
+            document.getElementById('totalTrips').textContent = totalTrips.toLocaleString();
+            document.getElementById('avgFare').textContent = '$' + avgFare.toFixed(2);
+            document.getElementById('avgDistance').textContent = avgDistance.toFixed(2) + ' km';
+            document.getElementById('avgSpeed').textContent = avgSpeed.toFixed(2) + ' km/h';
+        }
+
+        function updateCharts() {
+            updateHourlyChart();
+            updateWeeklyChart();
+        }
+
+        function updateHourlyChart() {
+            var hourlyData = new Array(24).fill(0);
+            for (var i = 0; i < filteredTrips.length; i++) {
+                hourlyData[filteredTrips[i].hour_of_day]++;
+            }
+            var ctx = document.getElementById('hourlyChart').getContext('2d');
+            if (hourlyChart) {
+                hourlyChart.destroy();
+            }
+            var labels = [];
+            for (var i = 0; i < 24; i++) {
+                labels.push((i < 10 ? '0' : '') + i + ':00');
+            }
+            hourlyChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Trips per Hour',
+                        data: hourlyData,
+                        backgroundColor: 'rgba(44, 209, 255, 0.8)',
+                        borderColor: 'rgba(44, 209, 255, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#ffffff',
+                                font: { family: 'Poppins', size: 12 }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'Poppins', size: 10 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'Poppins', size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateWeeklyChart() {
+            var weeklyData = new Array(7).fill(0);
+            for (var i = 0; i < filteredTrips.length; i++) {
+                weeklyData[filteredTrips[i].day_of_week]++;
+            }
+            var ctx = document.getElementById('weeklyChart').getContext('2d');
+            if (weeklyChart) {
+                weeklyChart.destroy();
+            }
+            var daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            weeklyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: daysOfWeek,
+                    datasets: [{
+                        label: 'Trips per Day',
+                        data: weeklyData,
+                        backgroundColor: 'rgba(236, 72, 153, 0.2)',
+                        borderColor: 'rgba(236, 72, 153, 1)',
+                        borderWidth: 3,
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: 'rgba(236, 72, 153, 1)',
+                        pointBorderColor: '#ffffff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#ffffff',
+                                font: { family: 'Poppins', size: 12 }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'Poppins', size: 11 } }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: { color: 'rgba(255, 255, 255, 0.6)', font: { family: 'Poppins', size: 11 } }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateLiveActivity() {
+            var activityList = document.getElementById('activityList');
+            activityList.innerHTML = '';
+            var sortedTrips = filteredTrips.slice().sort(function(a, b) {
+                return new Date(b.pickup_datetime) - new Date(a.pickup_datetime);
+            });
+            var latestTrips = sortedTrips.slice(0, 20);
+            for (var i = 0; i < latestTrips.length; i++) {
+                var trip = latestTrips[i];
+                var activityItem = document.createElement('div');
+                activityItem.className = 'activity-item';
+                var date = new Date(trip.pickup_datetime);
+                var options = {
+                    weekday: 'short',
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false
+                };
+                var formattedDate = date.toLocaleString('en-US', options);
+                var iconDiv = document.createElement('div');
+                iconDiv.className = 'activity-icon';
+                iconDiv.innerHTML = '<i class="fas fa-car"></i>';
+                var contentDiv = document.createElement('div');
+                contentDiv.className = 'activity-content';
+                var h4 = document.createElement('h4');
+                h4.textContent = 'Trip #' + trip.trip_id + ' - ' + parseFloat(trip.distance_km).toFixed(1) + ' km';
+                var p = document.createElement('p');
+                p.textContent = formattedDate;
+                contentDiv.appendChild(h4);
+                contentDiv.appendChild(p);
+                activityItem.appendChild(iconDiv);
+                activityItem.appendChild(contentDiv);
+                activityList.appendChild(activityItem);
+            }
+        }
+
+        function refreshCharts() {
+            var refreshBtns = document.querySelectorAll('.refresh-btn i');
+            for (var i = 0; i < refreshBtns.length; i++) {
+                refreshBtns[i].style.animation = 'none';
+                setTimeout(function() {
+                    for (var j = 0; j < refreshBtns.length; j++) {
+                        refreshBtns[j].style.animation = '';
+                    }
+                }, 10);
+            }
+            updateCharts();
+        }
+    </script>
+</body>
+</html>

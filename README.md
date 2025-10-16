@@ -51,67 +51,207 @@ Urban-Mobility-Data-Explorer/
 ### Prerequisites
 - Python 3.8+
 - MySQL/MariaDB server
-- XAMPP (or standalone MySQL installation)
 
 ### 1. Clone and Setup
 ```bash
-git clone git@github.com:gilbmura/Urban-Mobility-Data-Explorer.git
+git clone https://github.com/gilbmura/Urban-Mobility-Data-Explorer.git
 cd Urban-Mobility-Data-Explorer
-```
 
-### 2. Install Dependencies
-```bash
-# Create virtual environment
-python -m venv .venv
-.venv\Scripts\activate  # On Windows
-# source .venv/bin/activate  # On macOS/Linux
-
-# Install packages
+# Install dependencies
+python setup.py
+# OR manually:
 pip install -r requirements.txt
 ```
 
-### 3. Database Setup
+> **Note:** Replace `yourusername` with your actual GitHub username
+
+### 2. Database Setup
+
+#### **Option A: XAMPP (Easiest for Windows)**
+1. **Download XAMPP:** https://www.apachefriends.org/download.html
+2. **Install and start XAMPP**
+3. **Start MySQL** from XAMPP Control Panel
+4. **Open phpMyAdmin:** http://localhost/phpmyadmin
+5. **Create database:** Click "New" → Enter `nyc_mobility` → Create
+6. **Import schema:** Select `nyc_mobility` → Import → Choose `db/schema.sql` → Go
+
+#### **Option B: MySQL Server (Windows)**
+1. **Download MySQL:** https://dev.mysql.com/downloads/installer/
+2. **Install MySQL Server** (choose "Server only" or "Developer Default")
+3. **Set root password** during installation
+4. **Start MySQL service:**
+   ```bash
+   net start mysql
+   # OR check if running:
+   Get-Service | Where-Object {$_.Name -like "*mysql*"}
+   ```
+
+5. **Create database and user:**
+   ```bash
+   # Find MySQL installation (usually):
+   "C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u root -p
+   ```
+   **Note:** For us we used "C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -p nyc_mobility
+   
+   Then run:
+   ```sql
+   CREATE DATABASE nyc_mobility CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE USER 'nyc_user'@'localhost' IDENTIFIED BY 'nyc_pass';
+   GRANT ALL PRIVILEGES ON nyc_mobility.* TO 'nyc_user'@'localhost';
+   FLUSH PRIVILEGES;
+   exit;
+   ```
+
+6. **Import schema:**
+   ```bash
+   "C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -pnyc_pass nyc_mobility < db/schema.sql
+   ```
+
+#### **Option C: Docker (Advanced)**
 ```bash
-# Start MySQL server (XAMPP or service)
-# Then create database and user
-mysql -u root -p
+# Stop any existing MySQL containers
+docker stop $(docker ps -q --filter ancestor=mysql)
 
-CREATE DATABASE nyc_mobility CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'nyc_user'@'localhost' IDENTIFIED BY 'nyc_pass';
-GRANT ALL PRIVILEGES ON nyc_mobility.* TO 'nyc_user'@'localhost';
-FLUSH PRIVILEGES;
-exit;
+# Run MySQL container
+docker run -d --name nyc-mysql \
+  -e MYSQL_ROOT_PASSWORD=root_password \
+  -e MYSQL_DATABASE=nyc_mobility \
+  -e MYSQL_USER=nyc_user \
+  -e MYSQL_PASSWORD=nyc_pass \
+  -p 3306:3306 \
+  -v ./db:/docker-entrypoint-initdb.d:ro \
+  mysql:8.0
 
-# Import schema and indexes
-mysql -u nyc_user -p nyc_mobility < db/schema.sql
-mysql -u nyc_user -p nyc_mobility < db/indexes.sql
+# Wait for initialization
+docker logs nyc-mysql
 ```
 
-### 4. Environment Configuration
-Create `.env` file:
-```env
-DB_HOST=127.0.0.1
-DB_USER=nyc_user
-DB_PASSWORD=nyc_pass
-DB_NAME=nyc_mobility
-```
-
-### 5. Data Processing
+### 3. Load Data
 ```bash
-# Process sample data (limit for testing)
-python scripts/etl_fixed.py --input data/raw/train.zip --output data/processed/cleaned.csv --load-db --max-rows 100000
-
-# Process full dataset
-python scripts/etl_fixed.py --input data/raw/train.zip --output data/processed/cleaned.csv --load-db
+# Load the cleaned CSV data into database
+python scripts/simple_loader.py --csv data/processed/cleaned.csv
 ```
 
-### 6. Start Application
+### 4. Start API
 ```bash
 cd backend
 python app.py
 ```
 
-Visit: http://127.0.0.1:5000
+### 5. Test API
+```bash
+# Test all endpoints
+python test_api.py
+
+# OR test individual endpoints:
+# Health check: http://127.0.0.1:5000/health
+# Stats: http://127.0.0.1:5000/stats/summary
+# Trips: http://127.0.0.1:5000/trips?limit=5
+```
+
+**API will be available at:** http://127.0.0.1:5000
+
+## Troubleshooting 🔧
+
+### Database Connection Issues
+```bash
+# Check if MySQL is running
+Get-Service | Where-Object {$_.Name -like "*mysql*"}
+
+# Test connection
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -pnyc_pass -e "SELECT 1;"
+
+# Check database exists
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -pnyc_pass -e "SHOW DATABASES;"
+```
+
+### Port Issues
+- **Default MySQL port:** 3306
+- **API port:** 5000
+- **Check ports:** `netstat -an | findstr :3306`
+
+### Data Loading Issues
+```bash
+# Check if data loaded correctly
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -pnyc_pass -e "USE nyc_mobility; SELECT COUNT(*) FROM trips;"
+```
+
+### API Not Starting
+```bash
+# Check if port 5000 is free
+netstat -an | findstr :5000
+
+# Start API manually
+cd backend
+python app.py
+```
+
+### Common Issues & Solutions
+
+#### **Issue: "Access denied for user 'nyc_user'@'localhost'"**
+**Solution:** User doesn't exist or wrong password
+```bash
+# Connect as root and recreate user
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u root -p
+```
+```sql
+DROP USER IF EXISTS 'nyc_user'@'localhost';
+CREATE USER 'nyc_user'@'localhost' IDENTIFIED BY 'nyc_pass';
+GRANT ALL PRIVILEGES ON nyc_mobility.* TO 'nyc_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+#### **Issue: "Foreign key constraint fails"**
+**Solution:** The simple_loader.py handles this automatically by creating vendors and payment_types first
+
+#### **Issue: "Lost connection to server"**
+**Solution:** Usually a port mismatch or MySQL not running
+```bash
+# Check MySQL service
+Get-Service | Where-Object {$_.Name -like "*mysql*"}
+
+# Check if port is listening
+netstat -an | findstr :3306
+```
+
+#### **Issue: "mysql command not found"**
+**Solution:** Use full path to MySQL executable
+```bash
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -p
+```
+
+#### **Issue: API returns "Database connection failed"**
+**Solution:** Check database credentials and connection
+```bash
+# Test database connection
+"C:\Program Files\MySQL\MySQL Server 9.4\bin\mysql.exe" -u nyc_user -pnyc_pass -e "USE nyc_mobility; SELECT COUNT(*) FROM trips;"
+```
+
+### Development Notes 📝
+
+#### **What We Fixed:**
+1. **Removed complex ETL script** - replaced with simple_loader.py
+2. **Fixed foreign key constraints** - loader now creates parent records first
+3. **Added proper error handling** - all API endpoints have error responses
+4. **Streamlined dependencies** - only essential packages in requirements.txt
+5. **Added port configuration** - supports different MySQL ports
+6. **Created test suite** - test_api.py for easy validation
+
+#### **File Structure:**
+```
+├── backend/
+│   ├── app.py              # Main API server
+│   └── algorithms.py       # Tip calculation algorithms
+├── scripts/
+│   └── simple_loader.py    # CSV to database loader
+├── db/
+│   └── schema.sql         # Database schema
+├── data/processed/
+│   └── cleaned.csv        # Processed data (99,658 records)
+├── requirements.txt       # Python dependencies
+├── setup.py              # Easy setup script
+└── test_api.py          # API testing script
+```
 
 ## API Endpoints 🔌
 

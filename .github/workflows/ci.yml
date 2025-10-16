@@ -1,0 +1,77 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root_password
+          MYSQL_DATABASE: nyc_mobility
+          MYSQL_USER: nyc_user
+          MYSQL_PASSWORD: nyc_pass
+        ports:
+          - 3306:3306
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest requests
+    
+    - name: Wait for MySQL
+      run: |
+        while ! mysqladmin ping -h"127.0.0.1" -P3306 -u"nyc_user" -p"nyc_pass" --silent; do
+          sleep 1
+        done
+    
+    - name: Setup database
+      run: |
+        mysql -h 127.0.0.1 -P 3306 -u nyc_user -pnyc_pass nyc_mobility < db/schema.sql
+    
+    - name: Test API
+      run: |
+        cd backend
+        python app.py &
+        sleep 5
+        cd ..
+        python test_api.py
+    
+    - name: Test data loader
+      run: |
+        # Create sample data for testing
+        echo "vendor_id,pickup_datetime,dropoff_datetime,pickup_lat,pickup_lng,dropoff_lat,dropoff_lng,distance_km,duration_min,fare_amount,tip_amount,payment_type" > test_data.csv
+        echo "VTS,2023-01-01 10:00:00,2023-01-01 10:15:00,40.7128,-74.0060,40.7589,-73.9851,5.2,15.0,12.50,2.00,cash" >> test_data.csv
+        
+        # Test loader
+        python scripts/simple_loader.py --csv test_data.csv --batch-size 1
+        
+        # Verify data loaded
+        mysql -h 127.0.0.1 -P 3306 -u nyc_user -pnyc_pass -e "USE nyc_mobility; SELECT COUNT(*) FROM trips;"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Run security scan
+      uses: securecodewarrior/github-action-add-sarif@v1
+      with:
+        sarif-file: security-scan-results.sarif

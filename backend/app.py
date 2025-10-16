@@ -1,87 +1,160 @@
 import os
-import csv
-import io
-from datetime import datetime
-from typing import Dict, Any, List, Tuple
+from typing import Any, List, Tuple
 
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, jsonify, request, render_template
+from flask_cors import CORS
 from dotenv import load_dotenv
 import MySQLdb
 
 from algorithms import top_k_by_tip_percentage
 
 
-load_dotenv()
+# load_dotenv()
 
 def get_db_connection():
-    return MySQLdb.connect(
-        host=os.getenv('DB_HOST', '127.0.0.1'),
-        user=os.getenv('DB_USER', 'nyc_user'),
-        passwd=os.getenv('DB_PASSWORD', 'nyc_pass'),
-        db=os.getenv('DB_NAME', 'nyc_mobility'),
-        charset='utf8mb4'
-    )
+    """Get database connection with error handling."""
+    try:
+        return MySQLdb.connect(
+            host=os.getenv('DB_HOST', '127.0.0.1'),
+            user=os.getenv('DB_USER', 'nyc_user'),
+            passwd=os.getenv('DB_PASSWORD', 'nyc_pass'),
+            db=os.getenv('DB_NAME', 'nyc_mobility'),
+            port=int(os.getenv('DB_PORT', 3306)),
+            charset='utf8mb4'
+        )
+    except MySQLdb.Error as e:
+        print(f"Database connection error: {e}")
+        return None
 
+app = Flask(__name__, template_folder='../templates', static_folder='../static')
+CORS(app)  # Enable CORS for all routes
 
-app = Flask(__name__)
-
+@app.route('/')
+def index():
+    return render_template('dashboard.html')
 
 @app.get('/health')
 def health():
     return jsonify({"status": "ok"})
 
 
-def parse_date(s: str) -> datetime:
-    return datetime.fromisoformat(s)
+# TESTING
+
+@app.route('/trips', methods=['GET'])
+def api_trips():
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
+    try:
+        # Get query parameters
+        start_date = request.args.get('start')
+        end_date = request.args.get('end')
+        limit = int(request.args.get('limit', 1000000))  # Default limit for dashboard
+        
+        # Build SQL query with date filtering
+        where_conditions = []
+        params = []
+        
+        if start_date:
+            where_conditions.append("DATE(pickup_datetime) >= %s")
+            params.append(start_date)
+        
+        if end_date:
+            where_conditions.append("DATE(pickup_datetime) <= %s")
+            params.append(end_date)
+        
+        where_clause = ""
+        if where_conditions:
+            where_clause = "WHERE " + " AND ".join(where_conditions)
+        
+        sql = f"""
+        SELECT trip_id, vendor_id, pickup_datetime, dropoff_datetime, 
+               pickup_lat, pickup_lng, dropoff_lat, dropoff_lng,
+               distance_km, duration_min, fare_amount, tip_amount, payment_type,
+               speed_kmh, fare_per_km, hour_of_day, day_of_week, rush_hour, is_weekend
+        FROM trips {where_clause}
+        ORDER BY pickup_datetime DESC
+        LIMIT %s
+        """
+        params.append(limit)
+        
+        cur = conn.cursor(MySQLdb.cursors.DictCursor)
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        cur.close()
+        
+        return jsonify(rows)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+# Removed unused parse_date function
 
 
 @app.get('/stats/summary')
 def stats_summary():
-    params = request.args
-    from_dt = params.get('from')
-    to_dt = params.get('to')
-
-    where = []
-    args: List[Any] = []
-    if from_dt:
-        where.append("pickup_datetime >= %s")
-        args.append(from_dt)
-    if to_dt:
-        where.append("pickup_datetime <= %s")
-        args.append(to_dt)
-    where_sql = (" WHERE " + " AND ".join(where)) if where else ""
-
-    sql = f"""
-    SELECT COUNT(*) AS trips,
-           AVG(speed_kmh) AS avg_speed_kmh,
-           AVG(fare_per_km) AS avg_fare_per_km,
-           AVG(duration_min) AS avg_duration_min
-    FROM trips {where_sql}
-    """
-
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
     try:
+        params = request.args
+        from_dt = params.get('from') or params.get('start')
+        to_dt = params.get('to') or params.get('end')
+
+        where = []
+        args: List[Any] = []
+        if from_dt:
+            where.append("DATE(pickup_datetime) >= %s")
+            args.append(from_dt)
+        if to_dt:
+            where.append("DATE(pickup_datetime) <= %s")
+            args.append(to_dt)
+        where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
+        sql = f"""
+        SELECT COUNT(*) AS trips,
+               AVG(speed_kmh) AS avg_speed_kmh,
+               AVG(fare_per_km) AS avg_fare_per_km,
+               AVG(duration_min) AS avg_duration_min,
+               AVG(fare_amount) AS avg_fare_amount,
+               AVG(distance_km) AS avg_distance_km
+        FROM trips {where_sql}
+        """
+
         cur = conn.cursor(MySQLdb.cursors.DictCursor)
         cur.execute(sql, args)
         row = cur.fetchone()
+        cur.close()
         return jsonify(row)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
 
 
-@app.get('/trips')
-def list_trips():
-    params = request.args
-    limit = min(int(params.get('limit', 50)), 500)
-    offset = int(params.get('offset', 0))
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor(MySQLdb.cursors.DictCursor)
-        cur.execute("SELECT * FROM trips ORDER BY pickup_datetime DESC LIMIT %s OFFSET %s", (limit, offset))
-        rows = cur.fetchall()
-        return jsonify(rows)
-    finally:
-        conn.close()
+# @app.get('/trips')
+# def list_trips():
+#     params = request.args
+#     # limit = min(int(params.get('limit', 50)), 500)
+#     # offset = int(params.get('offset', 0))
+    
+#     conn = get_db_connection()
+#     if not conn:
+#         return jsonify({"error": "Database connection failed"}), 500
+    
+#     try:
+#         cur = conn.cursor(MySQLdb.cursors.DictCursor)
+#         cur.execute("SELECT * FROM trips ORDER BY pickup_datetime DESC LIMIT 10 OFFSET 0")
+#         rows = cur.fetchall()
+#         return jsonify(rows)
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+#     finally:
+#         conn.close()
 
 
 @app.get('/aggregations/hourly')
@@ -103,17 +176,22 @@ def aggregations_hourly():
     SELECT DATE_FORMAT(pickup_datetime, '%%Y-%%m-%%d %%H:00:00') AS hour,
            COUNT(*) AS trips,
            AVG(speed_kmh) AS avg_speed
-    FROM trips {where_sql}
+    FROM trips{where_sql}
     GROUP BY hour
     ORDER BY hour
     """
 
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
     try:
         cur = conn.cursor(MySQLdb.cursors.DictCursor)
         cur.execute(sql, args)
         rows = cur.fetchall()
         return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
 
@@ -122,7 +200,11 @@ def aggregations_hourly():
 def insights_top_tipped():
     params = request.args
     limit = min(int(params.get('limit', 20)), 200)
+    
     conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database connection failed"}), 500
+    
     try:
         cur = conn.cursor()
         cur.execute("SELECT trip_id, fare_amount, tip_amount FROM trips WHERE fare_amount > 0 AND tip_amount >= 0")
@@ -138,96 +220,13 @@ def insights_top_tipped():
             for item in result
         ]
         return jsonify(payload)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         conn.close()
 
 
-def validate_and_transform_row(row: Dict[str, str]) -> Tuple[Dict[str, Any], List[str]]:
-    reasons: List[str] = []
-    try:
-        pickup = datetime.fromisoformat(row['pickup_datetime'])
-        dropoff = datetime.fromisoformat(row['dropoff_datetime'])
-    except Exception:
-        reasons.append('invalid_timestamp')
-        return {}, reasons
-    if dropoff <= pickup:
-        reasons.append('non_positive_duration')
-        return {}, reasons
-
-    def to_float(val: str, key: str, min_v: float = None, max_v: float = None) -> float:
-        try:
-            x = float(val)
-        except Exception:
-            reasons.append(f'invalid_{key}')
-            return 0.0
-        if min_v is not None and x < min_v:
-            reasons.append(f'out_of_range_{key}')
-        if max_v is not None and x > max_v:
-            reasons.append(f'out_of_range_{key}')
-        return x
-
-    pickup_lat = to_float(row.get('pickup_lat', ''), 'pickup_lat', -90, 90)
-    pickup_lng = to_float(row.get('pickup_lng', ''), 'pickup_lng', -180, 180)
-    dropoff_lat = to_float(row.get('dropoff_lat', ''), 'dropoff_lat', -90, 90)
-    dropoff_lng = to_float(row.get('dropoff_lng', ''), 'dropoff_lng', -180, 180)
-    distance_km = to_float(row.get('distance_km', ''), 'distance_km', 0.0, 200.0)
-    duration_min = to_float(row.get('duration_min', ''), 'duration_min', 0.01, 24*60)
-    fare_amount = to_float(row.get('fare_amount', ''), 'fare_amount', 0.0, None)
-    tip_amount = to_float(row.get('tip_amount', ''), 'tip_amount', 0.0, None)
-
-    if any(k.startswith('invalid_') or k.startswith('out_of_range_') for k in reasons):
-        return {}, reasons
-
-    return {
-        'vendor_id': row.get('vendor_id') or None,
-        'pickup_datetime': pickup.strftime('%Y-%m-%d %H:%M:%S'),
-        'dropoff_datetime': dropoff.strftime('%Y-%m-%d %H:%M:%S'),
-        'pickup_lat': round(pickup_lat, 6),
-        'pickup_lng': round(pickup_lng, 6),
-        'dropoff_lat': round(dropoff_lat, 6),
-        'dropoff_lng': round(dropoff_lng, 6),
-        'distance_km': round(distance_km, 3),
-        'duration_min': round(duration_min, 3),
-        'fare_amount': round(fare_amount, 2),
-        'tip_amount': round(tip_amount, 2),
-        'payment_type': row.get('payment_type') or None
-    }, reasons
-
-
-@app.post('/process')
-def process_file():
-    if 'file' not in request.files:
-        return jsonify({"error": "file missing"}), 400
-    f = request.files['file']
-    stream = io.TextIOWrapper(f.stream, encoding='utf-8')
-    reader = csv.DictReader(stream)
-
-    output = io.StringIO()
-    fieldnames = [
-        'vendor_id','pickup_datetime','dropoff_datetime','pickup_lat','pickup_lng','dropoff_lat','dropoff_lng',
-        'distance_km','duration_min','fare_amount','tip_amount','payment_type'
-    ]
-    writer = csv.DictWriter(output, fieldnames=fieldnames)
-    writer.writeheader()
-
-    kept = 0
-    excluded = 0
-    for row in reader:
-        clean_row, reasons = validate_and_transform_row(row)
-        if reasons:
-            excluded += 1
-            continue
-        writer.writerow(clean_row)
-        kept += 1
-
-    output.seek(0)
-    return send_file(
-        io.BytesIO(output.getvalue().encode('utf-8')),
-        mimetype='text/csv',
-        as_attachment=True,
-        download_name='cleaned.csv',
-        etag=False
-    )
+# File processing removed - use scripts/simple_loader.py instead
 
 
 if __name__ == '__main__':
