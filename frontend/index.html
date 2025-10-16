@@ -1,58 +1,157 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NYC Mobility Dashboard</title>
-  <link rel="stylesheet" href="./styles.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NYC Mobility - Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
-  <header>
-    <h1>NYC Mobility Dashboard</h1>
-  </header>
-  <main>
-    <section class="controls">
-      <div>
-        <label>From <input type="date" id="fromDate" /></label>
-        <label>To <input type="date" id="toDate" /></label>
-        <button id="btnRefresh">Refresh</button>
-      </div>
-      <div>
-        <form id="uploadForm">
-          <input type="file" id="fileInput" accept=".csv" />
-          <button type="submit">Clean CSV</button>
-        </form>
-      </div>
-    </section>
+    <!-- Animated Background -->
+    <div class="bg-animation">
+        <div class="taxi-icon"><i class="fas fa-taxi"></i></div>
+        <div class="taxi-icon"><i class="fas fa-taxi"></i></div>
+        <div class="taxi-icon"><i class="fas fa-taxi"></i></div>
+    </div>
 
-    <section class="kpis">
-      <div class="kpi"><span id="kpiTrips">0</span><label>Trips</label></div>
-      <div class="kpi"><span id="kpiAvgSpeed">0</span><label>Avg Speed (km/h)</label></div>
-      <div class="kpi"><span id="kpiAvgFare">0</span><label>Avg Fare per km</label></div>
-      <div class="kpi"><span id="kpiAvgDuration">0</span><label>Avg Duration (min)</label></div>
-    </section>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">
+                <i class="fas fa-city"></i>
+                <span>NYC Mobility</span>
+            </div>
+            <div class="nav-links">
+                <a href="index.html" class="nav-link active">
+                    <i class="fas fa-chart-line"></i> Dashboard
+                </a>
+                <a href="analytics.html" class="nav-link">
+                    <i class="fas fa-brain"></i> Analytics
+                </a>
+                <a href="upload.html" class="nav-link">
+                    <i class="fas fa-upload"></i> Upload Data
+                </a>
+                <a href="trips.html" class="nav-link">
+                    <i class="fas fa-list"></i> Trip History
+                </a>
+            </div>
+            <div class="status-indicator">
+                <div class="status-dot online"></div>
+                <span>Connected</span>
+            </div>
+        </div>
+    </nav>
 
-    <section class="charts">
-      <div>
-        <h3>Trips by Hour</h3>
-        <canvas id="hourlyChart" width="800" height="240"></canvas>
-      </div>
-      <div>
-        <h3>Top Tipped Trips</h3>
-        <table id="topTippedTable">
-          <thead><tr><th>Trip ID</th><th>Tip %</th><th>Fare</th><th>Tip</th></tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
-  </main>
+    <!-- Main Container -->
+    <div class="container">
+        <div class="section-header">
+            <h1><i class="fas fa-chart-pie"></i> Real-Time Dashboard</h1>
+            <div class="date-filter">
+                <input type="date" id="dateFrom" class="date-input" min="2016-01-01" max="2016-12-31">
+                <span>to</span>
+                <input type="date" id="dateTo" class="date-input" min="2016-01-01" max="2016-12-31">
+                <button id="applyFilter" class="btn-primary">
+                    <i class="fas fa-filter"></i> Apply
+                </button>
+            </div>
+        </div>
 
-  <script src="./app.js"></script>
-  <script>
-    // Simple canvas drawing for hourly chart (no libs)
-  </script>
+        <!-- Statistics Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <i class="fas fa-route"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="totalTrips">---</div>
+                    <div class="stat-label">Total Trips</div>
+                </div>
+                <div class="stat-trend up">
+                    <i class="fas fa-arrow-up"></i> 12.5%
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <i class="fas fa-dollar-sign"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="avgFare">$---</div>
+                    <div class="stat-label">Average Fare</div>
+                </div>
+                <div class="stat-trend up">
+                    <i class="fas fa-arrow-up"></i> 8.3%
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <i class="fas fa-road"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="avgDistance">--- km</div>
+                    <div class="stat-label">Avg Distance</div>
+                </div>
+                <div class="stat-trend down">
+                    <i class="fas fa-arrow-down"></i> 3.2%
+                </div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                    <i class="fas fa-tachometer-alt"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value" id="avgSpeed">--- km/h</div>
+                    <div class="stat-label">Avg Speed</div>
+                </div>
+                <div class="stat-trend up">
+                    <i class="fas fa-arrow-up"></i> 5.7%
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3><i class="fas fa-clock"></i> Hourly Trip Distribution</h3>
+                    <button class="btn-icon refresh-btn" onclick="loadCharts()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <canvas id="hourlyChart"></canvas>
+            </div>
+
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h3><i class="fas fa-calendar-week"></i> Weekly Patterns</h3>
+                    <button class="btn-icon refresh-btn" onclick="loadCharts()">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <canvas id="weeklyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Live Activity Feed -->
+        <div class="activity-feed">
+            <h3><i class="fas fa-stream"></i> Live Activity</h3>
+            <div id="activityList" class="activity-list"></div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Loading data...</p>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+    <script src="dashboard.js"></script>
 </body>
-<!-- No trailing whitespace -->
 </html>
-
-
